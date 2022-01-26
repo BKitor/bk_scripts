@@ -1,0 +1,29 @@
+#!/usr/bin/python3
+
+import argparse
+import re
+import sys
+parser = argparse.ArgumentParser()
+parser.add_argument("-c", "--create_file", action="store_true",
+                    help="generates clean_<file>.txt, otherwise uses stdout")
+# parser.add_argument("-n", "--num_tests", type="int", default=1,
+#                     help="collapse into an n wide table")
+parser.add_argument("FILE")
+args = parser.parse_args()
+
+# c = re.compile(r"^match:(.*)$")
+c = re.compile(r"(^\d+)\s+(\d+\.\d+$)")
+
+out_file = sys.stdout
+if args.create_file:
+    out_file = open(f"./clean_{args.FILE}.csv", "w")
+
+with open(args.FILE) as in_file:
+    for line in in_file:
+        if "OSU MPI" in line or "Size" in line:
+            continue
+        m = c.search(line)
+        if m:
+            print(f"{m.group(1)}, {m.group(2)}", file=out_file)
+        else:
+            print(line, end="", file=out_file)
