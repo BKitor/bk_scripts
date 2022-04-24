@@ -1,0 +1,141 @@
+#!/usr/bin/python3
+
+import logging
+import math
+import sys
+import re
+import argparse
+import csv
+
+parser = argparse.ArgumentParser()
+parser.add_argument("FILE")
+parser.add_argument("-n", type=int, required=True,
+                    help="Number of ranks in process")
+parser.add_argument("-s", type=int, required=True,
+                    help="Number of samples per run")
+parser.add_argument("-e", type=int, required=True,
+                    help="Number of experiments per run")
+parser.add_argument("-a", type=str, required=True,
+                    help="alg selection [k-ary, k-ary-pipe]")
+parser.add_argument("-d", action="store_true", default=False,
+                    help="force output")
+args = parser.parse_args()
+
+if args.d:
+    logging.getLogger().setLevel(logging.DEBUG)
+
+alg_exp_fmt_dict = {
+    "k-ary": {
+        "root": "arrive_at_ktree",
+        "points": [
+            "finish_intra_reduce",
+            "register_at_ss",
+            "reduce_pbuf",
+            "get_parent_rank",
+            "send_parent_data",
+            "get_leader_of_tree",
+            "reset_remote_ss",
+            "finish_inter_bcast",
+            "reset_remote_ss",
+        ],
+    },
+    "k-ary-pipe": {
+        "root": "ktree_pipeline_arrive",
+        "points": [
+            "finish_intra_reduce",
+            "ktree_pipeline_arrive",
+            "start_new_segment",
+            "leave_new_seg_wait",
+            "starting_new_sync_round",
+            "synced_at_ss",
+            "start_postbuf_reduce",
+            "leave_postbuf_reduce",
+            "reset_remote_ss",
+            "got_parent_rank",
+            "sent_parent_rank",
+            "leave_main_loop",
+            "leave_cleanup_wait",
+            "final_cleanup_wait",
+            "ktree_pipeline_leave",
+        ]
+    }
+}
+
+if args.a not in alg_exp_fmt_dict:
+    logging.error(
+        f"{args.a} not a supported alg, try {alg_exp_fmt_dict.keys()}")
+    exit()
+
+exp_fmt = alg_exp_fmt_dict[args.a]
+
+c = re.compile(
+    r"^\[.+\]  BKPAP_PROFILE: (?P<time>\d+\.\d+) rank: (?P<rank>\d+) (?P<lbl>\w+)$")
+
+timing_template = {
+    k: 0.0 for k in exp_fmt["points"]
+}
+
+master_dataset = [[timing_template.copy() for _ in range(args.n)]
+                  for _ in range(args.e)]
+prev_time_arr = [0.0 for _ in range(args.n)]
+exp_count = [-1 for _ in range(args.n)]
+
+total_runs = 0
+maths_out = False
+with open(args.FILE) as f:
+    for line in f:
+        m = c.search(line)
+        if m is None:
+            # logging.info(f"Mismach line {line}")
+            continue
+        if int(m.group("rank")) >= args.n:
+            logging.info(f"Matched rank > -n : {line}")
+            continue
+
+        lbl = m.group("lbl")
+        if lbl != exp_fmt["root"] and lbl not in exp_fmt["points"]:
+            logging.error(f"matched profiling point with missing label {lbl}")
+
+        if lbl == exp_fmt["root"]:
+            total_runs += 1
+
+    maths_out = (total_runs / args.n) == (args.e * args.s)
+    if not maths_out:
+        logging.error("Check failed")
+        logging.error(
+            f"Collected runs: {total_runs}, mpi_wsise: {args.n} /= {total_runs/args.n}")
+        logging.error(
+            f"samples per run: {args.s}, num experiments: {args.e} *= {args.s*args.e}")
+        exit()
+
+    f.seek(0)
+    for line in f:
+        m = c.search(line)
+        if m is not None and int(m.group("rank")) < args.n:
+            msecs = (float(m.group("time"))*1e6)
+            rank = int(m.group("rank"))
+            lbl = m.group("lbl")
+            delta = msecs - prev_time_arr[rank]
+
+            if lbl == exp_fmt["root"]:
+                exp_count[rank] += 1
+
+            exp = math.floor(exp_count[rank]/args.s)
+
+            if not lbl == exp_fmt["root"]:
+                master_dataset[exp][rank][lbl] += delta
+
+            prev_time_arr[rank] = msecs
+
+
+if maths_out:
+    dict_writer = csv.DictWriter(sys.stdout, timing_template.keys())
+    num_runs = args.s
+    for experiment in master_dataset:
+        print("")
+        dict_writer.writeheader()
+        for exp_row in experiment:
+            avg_out = {k: v / num_runs for k, v in exp_row.items()}
+            dict_writer.writerow(avg_out)
+
+    print(f", num_runs, {num_runs}")
