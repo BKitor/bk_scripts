@@ -1,0 +1,85 @@
+import clean_lib
+import logging
+import csv
+import sys
+
+
+# TODO: Add fold-by functionality here
+def parse_hvd_style(file_name, folds, pattern_arr):
+    # assumes that each match will be fufilled before rematching
+    logging.info(f"parse_hvd_style, file:{file_name}, folds: {folds}")
+    logging.info(f"match_arr:{pattern_arr}")
+
+    id_list_base = []
+    for m in pattern_arr:
+        id_list_base.extend(m.groupindex.keys())
+
+    id_list = []
+    for f in range(folds):
+        id_list.extend([f"{id}_{f}" for id in id_list_base])
+
+    logging.info(id_list_base)
+    logging.info(id_list)
+
+    csv_writer = csv.DictWriter(sys.stdout, id_list)
+    csv_writer.writeheader()
+
+    tmp_match_dict = {k: None for k in id_list_base}
+    tmp_print_dict = {k: None for k in id_list}
+    conut_match_sets = 0
+    with open(file_name) as f:
+        for line in f:
+            # match line, extract info, and stuff in tmp_match_dict
+            matches = map(lambda x: x.search(line), pattern_arr)
+            for i, m in enumerate(matches):
+                if m is None:
+                    continue
+
+                for k, v in pattern_arr[i].groupindex.items():
+                    tmp_match_dict[k] = m.group(v)
+                    logging.info(
+                        f"added to tmp_match_dict:{tmp_match_dict.values()}")
+
+            # if tmp_match_dict full, move to tmp_print_dict
+            if None not in tmp_match_dict.values():
+                logging.info(
+                    f"filled tmp_match_dict:{tmp_match_dict.values()}")
+                for k in tmp_match_dict:
+                    tmp_print_dict[f"{k}_{conut_match_sets}"] = tmp_match_dict[k]
+                    tmp_match_dict[k] = None
+                conut_match_sets += 1
+
+            # logging.info(f"{tmp_print_dict.values()}")
+            if None not in tmp_print_dict.values():
+                logging.info(
+                    f"filled tmp_print_dict:{tmp_match_dict.values()}")
+                csv_writer.writerow(tmp_print_dict)
+                for k in tmp_print_dict:
+                    tmp_print_dict[k] = None
+                conut_match_sets = 0
+
+
+def main():
+    args = clean_lib.parse_inputs()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    pattern_list = clean_lib.hvd_pattern_base.copy()
+
+    if args.cpu:
+        pattern_list.insert(2, clean_lib.hvd_pattern_cpu)
+    elif args.gpu:
+        pattern_list.insert(2, clean_lib.hvd_pattern_gpu)
+    else:
+        logging.warning("no --cpu/--gpu specified")
+
+    if args.pattern_lst:
+        pattern_list.extend(
+            clean_lib.get_patterns_from_str(args.pattern_lst))
+
+    parse_hvd_style(args.FILE, args.num_folds, pattern_list)
+
+
+if __name__ == "__main__":
+    main()

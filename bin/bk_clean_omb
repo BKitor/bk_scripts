@@ -1,0 +1,179 @@
+#!/usr/bin/python3
+import clean_lib
+import logging
+import csv
+import sys
+
+
+def parse_omb_style_file(file_name, exp_pattern_arr, line_pattern):
+    '''
+    return 2 elements
+    exp_names -> array of experiment names
+    dat_dict -> dict for each message size to a dict of exp_name:time
+    {"msize": {"exp_name" : "time" } }
+    '''
+    exp_name = ""
+    dat_dict = {}
+    exp_names = []
+    track_matches_arr = [False for _ in exp_pattern_arr]
+    with open(file_name) as f:
+        for line in f:
+            exp_matches = map(lambda x: x.search(line), exp_pattern_arr)
+            m_dat = line_pattern.search(line)
+
+            exp_match_list = list(exp_matches)
+
+            if all(m is None for m in exp_match_list) and m_dat is None:
+                continue
+
+            for i, m in enumerate(exp_match_list):
+                if m is None:
+                    continue
+
+                # the experiment matching shuold be thought thorugh a bit better tbh
+                if track_matches_arr[i]:
+                    logging.debug("Clearing exp_name")
+                    track_matches_arr = [False for _ in exp_pattern_arr]
+                    # if exp_name not in exp_names:
+                    #     exp_names.append(exp_name)
+                    exp_name = ""
+
+                track_matches_arr[i] = True
+                g_idx = exp_pattern_arr[i].groupindex
+
+                for gname, idx in g_idx.items():
+                    logging.debug(f"matched identifier {gname}:{m.group(idx)}")
+                    exp_name += f"{gname}{m.group(idx)},"
+
+                if all(track_matches_arr) and exp_name not in exp_names:
+                    logging.debug(f"adding {exp_name} to exp_names")
+                    exp_names.append(exp_name)
+
+            if m_dat is None:
+                logging.debug(exp_names)
+                continue
+
+            if m_dat.group(1) not in dat_dict:
+                dat_dict[m_dat.group(1)] = {}
+
+            logging.debug(
+                f"matched datapoint {m_dat.group(1)}:{m_dat.group(2)}")
+            dat_dict[m_dat.group(1)][exp_name] = m_dat.group(2)
+
+    return exp_names, dat_dict
+
+
+def print_exp_names_from_dat_dict(exp_names, dat_dict):
+    # might want to cache this somewhere so that i'm not constatnly recalculating
+    # point towards making this more class-based
+    dat_arr = list(dat_dict.items())  # list of  ('msize', {'exp_name':'time'})
+    dat_arr.sort(key=lambda x: int(x[0]))  # sort numericly by message size
+
+    csv_headers = ["msize"]
+    csv_headers.extend(exp_names)
+
+    csv_writer = csv.DictWriter(sys.stdout, csv_headers)
+    csv_writer.writeheader()
+
+    for row in dat_arr:
+        for exp_name in exp_names:  # error checking in case a run didn't complete
+            if exp_name not in row[1]:
+                row[1][exp_name] = None
+
+        tmp_dict = {
+            exp_name: row[1][exp_name] for exp_name in exp_names
+        }
+        tmp_dict["msize"] = row[0]
+        csv_writer.writerow(tmp_dict)
+
+
+def print_omb_by_num(num_folds, exp_names, dat_dict):
+    num_tables = int(len(exp_names)/num_folds)
+
+    for i in range(num_tables):
+        fold_idx = i*num_folds
+        cur_exp_names = exp_names[fold_idx:fold_idx+num_folds]
+        print_exp_names_from_dat_dict(cur_exp_names, dat_dict)
+
+
+def print_omb_by_group(fold_by, exp_names, dat_dict):
+    '''
+    This is hack that depends on fold_by being followed by , in expname
+    This should work, unless I change the naming convention in parse_omb_style_file
+    '''
+    table_dict = {}
+
+    for exp_name in exp_names:
+        start_idx = exp_name.find(fold_by)
+        end_idx = exp_name.find(",", start_idx)
+
+        if exp_name[start_idx:end_idx] not in table_dict:
+            table_dict[exp_name[start_idx:end_idx]] = []
+
+        table_dict[exp_name[start_idx:end_idx]].append(exp_name)
+
+    for exp_name_list in table_dict.values():
+        print_exp_names_from_dat_dict(exp_name_list, dat_dict)
+
+
+def parse_omb_style(file_name, exp_pattern_arr, line_pattern, num_folds=1, fold_by=""):
+    '''
+    exp_pattern_arr -> array of compiles re for parameter experiments, (bsize, nproc, SHArP on/off)
+        used to generate names for each experiment column
+    line_pattern -> line of measurement, i.e. the msize+time line in OMB (TODO: needs better explination)
+    '''
+    logging.info(f"parse_hvd_style, file:{file_name}")
+    logging.info(f"exp_pattern_arr: {exp_pattern_arr}")
+    logging.info(f"line_match: {line_pattern}")
+
+    group_names = []
+    for pattern in exp_pattern_arr:
+        group_names.extend(pattern.groupindex.keys())
+    logging.info(f"group_names: {group_names}")
+
+    if (len(set(group_names)) != len(group_names)):
+        logging.error(f"There are duplicates in group_names: {group_names}")
+        exit()
+
+    exp_names, dat_dict = parse_omb_style_file(
+        file_name, exp_pattern_arr, line_pattern)
+
+    logging.info(f"omb parse found experiment names {exp_names}")
+    # logging.info(f"omb parse return data dict {dat_dict}")
+
+    if fold_by:
+        if fold_by not in group_names:
+            logging.error(
+                f"Could not find fold-by group: {fold_by} in {group_names}")
+            exit()
+
+        if not all(map(lambda exp_name: fold_by in exp_name, exp_names)):
+            logging.error(
+                f"Could not find fold-by group: {fold_by} in {exp_names}")
+            exit()
+
+        logging.info(f'folding by group "{fold_by}"')
+        print_omb_by_group(fold_by, exp_names, dat_dict)
+    else:
+        logging.info(f'folding by count {num_folds}')
+        print_omb_by_num(num_folds, exp_names, dat_dict)
+
+
+def main():
+    args = clean_lib.parse_inputs()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    if args.pattern_lst:
+        pattern_list = clean_lib.get_patterns_from_str(args.pattern_lst)
+    else:
+        logging.error(
+            "No pattern provided, use -p/--pattern_lst to pass in a comma sepperated list")
+
+    parse_omb_style(args.FILE, pattern_list, clean_lib.omb_pattern_run,
+                    num_folds=args.num_folds, fold_by=args.fold_by)
+
+
+if __name__ == "__main__":
+    main()
