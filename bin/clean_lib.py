@@ -15,7 +15,7 @@ GPD = {
     "n_and_ppn": re.compile(r"^-n (?P<wsize>\d+) -ppn (?P<ppn>\d+)$"),
     "omb_pattern_run": re.compile(r"^(?P<msize>\d+)\s+(?P<time>\d+\.\d+)$"),
     "mif": re.compile(r"# BK OSU Allreduce MIF (?P<mif>\d+\.\d+)?"),
-    "ucc_prio": re.compile(r"^UCC prio: (?P<ucc_prio>\d+)$"),
+    "ucc_prio": re.compile(r"^ucc_prio: (?P<ucc_prio>\d+)$"),
     "ucc_en": re.compile(r"^ucc_enable: (?P<ucc_en>\d)$"),
     "ompi_pml": re.compile(r"^OMPI_pml (?P<pml>\w+)$"),
     "hvd_cycle_time": re.compile(r"^HOROVOD_CYCLE_TIME: (?P<hvd_cycle_time>\d+)$"),

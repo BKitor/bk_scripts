@@ -7,23 +7,6 @@ import re
 import argparse
 import csv
 
-parser = argparse.ArgumentParser()
-parser.add_argument("FILE")
-parser.add_argument("-n", type=int, required=True,
-                    help="Number of ranks in process")
-parser.add_argument("-s", type=int, required=True,
-                    help="Number of samples per run")
-parser.add_argument("-e", type=int, required=True,
-                    help="Number of experiments per run")
-parser.add_argument("-a", type=str, required=True,
-                    help="alg selection [k-ary, k-ary-pipe]")
-parser.add_argument("-d", action="store_true", default=False,
-                    help="force output")
-args = parser.parse_args()
-
-if args.d:
-    logging.getLogger().setLevel(logging.DEBUG)
-
 alg_exp_fmt_dict = {
     "k-ary": {
         "root": "arrive_at_ktree",
@@ -43,7 +26,6 @@ alg_exp_fmt_dict = {
         "root": "ktree_pipeline_arrive",
         "points": [
             "finish_intra_reduce",
-            "ktree_pipeline_arrive",
             "start_new_segment",
             "leave_new_seg_wait",
             "starting_new_sync_round",
@@ -57,9 +39,46 @@ alg_exp_fmt_dict = {
             "leave_cleanup_wait",
             "final_cleanup_wait",
             "ktree_pipeline_leave",
-        ]
-    }
+        ],
+    },
+    "k-ary-fullpipe": {
+        "root": "arrive_at_fullpipe",
+        "points": [
+            "start_new_segment",
+            "leave_new_seg_wait",
+            "finish_intra_reduce_seg",
+            "starting_new_sync_round",
+            "synced_at_ss",
+            "start_postbuf_reduce",
+            "leave_postbuf_reduce",
+            "reset_remote_ss",
+            "got_parent_rank",
+            "sent_parent_rank",
+            "leave_main_loop",
+            "leave_cleanup_wait",
+            "final_cleanup_wait",
+            "ktree_fullpipe_leave",
+        ],
+    },
 }
+
+parser = argparse.ArgumentParser()
+parser.add_argument("FILE")
+parser.add_argument("-n", type=int, required=True,
+                    help="Number of ranks in process")
+parser.add_argument("-s", type=int, required=True,
+                    help="Number of samples per run")
+parser.add_argument("-e", type=int, required=True,
+                    help="Number of experiments per run")
+parser.add_argument("-a", type=str, required=True,
+                    help=f"alg selection {list(alg_exp_fmt_dict.keys())}")
+parser.add_argument("-d", action="store_true", default=False,
+                    help="force output")
+args = parser.parse_args()
+
+if args.d:
+    logging.getLogger().setLevel(logging.DEBUG)
+
 
 if args.a not in alg_exp_fmt_dict:
     logging.error(

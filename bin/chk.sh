@@ -15,6 +15,10 @@ while (("$#")); do
 			_flag_h=1
 			shift
 			;;
+		-w|--watch)
+			_flag_w=1
+			shift
+			;;
 		-*|--*)
 			echo "ERROR: bad flag $1"
 			echo
@@ -30,7 +34,7 @@ done
 
 
 if [ "" != "$_flag_h" ]; then
- 	echo "chk [-a/--salloc] [-q/--squeue] CLUSTER_1 CLUSTER_2..."
+ 	echo "chk [-a/--salloc] [-q/--squeue] [-w/--watch] CLUSTER_1 CLUSTER_2..."
  	echo "$a_arg for avail gpu nodes"
  	echo "$q_arg for jobs in the queue"
  	echo "CLUSTER is a list of clusters <CLUSTER>.computecanada.ca"
@@ -44,8 +48,13 @@ fi
 
 PARAMS_ARRAY=($PARAMS)
 
+if [ "" != "$_flag_w" ]; then
+	watch -n 180 -c chk $PARAMS
+	exit
+fi
+
 for CLUSTER in ${PARAMS_ARRAY[@]}; do
-	echo "checking cluster : $CLUSTER"
+	echo "CHECKING CLUSTER : $CLUSTER"
 
 	if [ "" != "$_flag_a" ]; then
  		ssh $CLUSTER.computecanada.ca sinfo | grep interac
@@ -64,6 +73,7 @@ for CLUSTER in ${PARAMS_ARRAY[@]}; do
  		echo "***DIFFS****"
  		diff --color=always $OLD_FILE $CUR_FILE | tee "$HOME/.chk_bak/last_diff_$cluster.txt"
  		rm $OLD_FILE
+ 		echo "*******"
 	fi
 done	
 
