@@ -17,9 +17,9 @@ alg_exp_fmt_dict = {
             "get_parent_rank",
             "send_parent_data",
             "get_leader_of_tree",
-            "reset_remote_ss",
             "finish_inter_bcast",
             "reset_remote_ss",
+            "leave_intra_bcast",
         ],
     },
     "k-ary-pipe": {
@@ -60,6 +60,44 @@ alg_exp_fmt_dict = {
             "ktree_fullpipe_leave",
         ],
     },
+    "bk-rsa": {
+        "root": "bkpap_rsa_start_algorithm",
+        "points": [
+            "bkpap_rsa_get_arrival",
+            "bkpap_rsa_aloc_tmp_bff",
+            "bkpap_rsa_enter_early_exchange",
+            "dplane_tag_early_p2p_wait_start",
+            "dplane_tag_early_p2p_wait_end",
+            "bkpap_rsa_leave_early_exchange",
+            "bkpap_rsa_enter_late_exchange",
+            "dplane_tag_early_p2p_reduce_end",
+            "dplane_tag_late_p2p_wait_start",
+            "dplane_tag_late_p2p_wait_end",
+            "dplane_tag_late_p2p_reduce_end",
+            "bkpap_rsa_leave_late_exchange",
+            "bkpap_rsa_finish_rs",
+            "bkpap_rsa_enter_sendrecv",
+            "bkpap_rsa_leave_sendrecv",
+            "bkpap_rsa_reset_ss",
+            "bkpap_rsa_end_algorithm",
+        ],
+    },
+    "base-rsa": {
+        "root": "base_rsa_gpu_start_algorithm",
+        "points": [
+            "base_rsa_start_phase_1",
+            "base_rsa_end_phase_1",
+            "base_rsa_start_rs_sendrecv",
+            "base_rsa_end_rs_sendrecv",
+            "base_rsa_end_rs_reduce",
+            "base_rsa_end_reduce_scatter",
+            "base_rsa_start_ag_sendrecv",
+            "base_rsa_end_ag_sendrecv",
+            "base_rsa_end_allgather",
+            "base_rsa_end_phase_4",
+            "base_rsa_gpu_end_algorithm",
+        ],
+    },
 }
 
 parser = argparse.ArgumentParser()
@@ -69,7 +107,9 @@ parser.add_argument("-n", type=int, required=True,
 parser.add_argument("-s", type=int, required=True,
                     help="Number of samples per run")
 parser.add_argument("-e", type=int, required=True,
-                    help="Number of experiments per run")
+                    help="Number of runs per job")
+parser.add_argument("-w", type=int, default=0,
+                    help="number of warmup runs (default 0)")
 parser.add_argument("-a", type=str, required=True,
                     help=f"alg selection {list(alg_exp_fmt_dict.keys())}")
 parser.add_argument("-d", action="store_true", default=False,
@@ -94,10 +134,15 @@ timing_template = {
     k: 0.0 for k in exp_fmt["points"]
 }
 
+# array of experiments, each experiment is an array of ranks, each rank is a dict containing the sum of data points
 master_dataset = [[timing_template.copy() for _ in range(args.n)]
                   for _ in range(args.e)]
+# hold the preveous timing point for a rank
 prev_time_arr = [0.0 for _ in range(args.n)]
+# count the number of experiments for a rank
 exp_count = [-1 for _ in range(args.n)]
+# array to count the number of warmup itterations, not the most space efficient but it's easy to implement
+warmup_count = [prev_time_arr.copy() for _ in range(args.e)]
 
 total_runs = 0
 maths_out = False
@@ -130,31 +175,39 @@ with open(args.FILE) as f:
     f.seek(0)
     for line in f:
         m = c.search(line)
+        commit_delta = True
         if m is not None and int(m.group("rank")) < args.n:
             msecs = (float(m.group("time"))*1e6)
             rank = int(m.group("rank"))
             lbl = m.group("lbl")
             delta = msecs - prev_time_arr[rank]
+            prev_time_arr[rank] = msecs
 
             if lbl == exp_fmt["root"]:
                 exp_count[rank] += 1
 
-            exp = math.floor(exp_count[rank]/args.s)
+            exp = (math.floor((exp_count[rank])/args.s))
 
-            if not lbl == exp_fmt["root"]:
+            if lbl == exp_fmt["root"]:
+                if warmup_count[exp][rank] < args.w:
+                    warmup_count[exp][rank] += 1
+
+            commit_delta = warmup_count[exp][rank] >= args.w
+
+            logging.info(
+                f"warr: {warmup_count[exp][rank]} commit state: {commit_delta}")
+
+            if not lbl == exp_fmt["root"] and commit_delta:
                 master_dataset[exp][rank][lbl] += delta
 
-            prev_time_arr[rank] = msecs
 
+dict_writer = csv.DictWriter(sys.stdout, timing_template.keys())
+num_runs = args.s - args.w
+for experiment in master_dataset:
+    print("")
+    dict_writer.writeheader()
+    for exp_row in experiment:
+        avg_out = {k: v / num_runs for k, v in exp_row.items()}
+        dict_writer.writerow(avg_out)
 
-if maths_out:
-    dict_writer = csv.DictWriter(sys.stdout, timing_template.keys())
-    num_runs = args.s
-    for experiment in master_dataset:
-        print("")
-        dict_writer.writeheader()
-        for exp_row in experiment:
-            avg_out = {k: v / num_runs for k, v in exp_row.items()}
-            dict_writer.writerow(avg_out)
-
-    print(f", num_runs, {num_runs}")
+print(f", num_runs, {num_runs}")

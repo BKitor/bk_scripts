@@ -4,6 +4,11 @@ import logging
 import csv
 import sys
 
+'''
+TODO: Will silently fail if not all experiment identifiers (string passed in by `-p`) are matched 
+      Should probably list which patterns are missing.
+'''
+
 
 def parse_omb_style_file(file_name, exp_pattern_arr, line_pattern):
     '''
@@ -165,11 +170,7 @@ def main():
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    if args.pattern_lst:
-        pattern_list = clean_lib.get_patterns_from_str(args.pattern_lst)
-    else:
-        logging.error(
-            "No pattern provided, use -p/--pattern_lst to pass in a comma sepperated list")
+    pattern_list = clean_lib.get_patterns_from_str(args.pattern_lst) if args.pattern_lst else []
 
     parse_omb_style(args.FILE, pattern_list, clean_lib.omb_pattern_run,
                     num_folds=args.num_folds, fold_by=args.fold_by)

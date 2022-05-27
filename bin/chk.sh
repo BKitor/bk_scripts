@@ -49,7 +49,7 @@ fi
 PARAMS_ARRAY=($PARAMS)
 
 if [ "" != "$_flag_w" ]; then
-	watch -n 180 -c chk $PARAMS
+	watch -n 240 -c chk $PARAMS
 	exit
 fi
 
@@ -63,7 +63,7 @@ for CLUSTER in ${PARAMS_ARRAY[@]}; do
 	if [ "" != "$_flag_q" ]; then
  		CUR_FILE="$HOME/.chk_bak/chk_$CLUSTER-$(date +%s).txt"
  		OLD_FILE="$(ls $HOME/.chk_bak/chk_$CLUSTER* | sort -n | tail -1)"
- 		ssh $CLUSTER.computecanada.ca squeue -u $USER -o '"%A %j %D %.9L %.20e %N"' | tee $CUR_FILE
+ 		ssh $CLUSTER.computecanada.ca squeue -u $USER -o '"%A %j %D %.9L %.20S %N"' | tee $CUR_FILE
  
  		if [ $? -ne 0 ]; then
  			echo "cluser $cluster failed"
