@@ -3,9 +3,11 @@ import re
 import logging
 
 GPD = {
+    "alg": re.compile(r"^alg: (?P<alg>\d+)$"),
     "bkpap_alg": re.compile(r"^bkpap_alg: (?P<bkpap_alg>\d+)$"),
     "bkpap_prio": re.compile(r"^bkpap_prio: (?P<bkpap_prio>\d+)$"),
     "bkpap_seg_size": re.compile(r"^bkpap_seg_size: (?P<bkpap_seg_size>\d+)$"),
+    "bkpap_flat": re.compile(r"^bkpap_flat: (?P<bkpap_flat>\d+)$"),
     "hcoll_en_sharp": re.compile(r"^HCOLL_ENABLE_SHARP=(?P<sharp>\d)$"),
     "hvd_cpu": re.compile(r"^Number of CPUs: (?P<ncpu>\w+)$"),
     "hvd_cycle_time": re.compile(r"^HOROVOD_CYCLE_TIME: (?P<hvd_cycle_time>\d+)$"),
@@ -18,6 +20,7 @@ GPD = {
     "ompi_pml": re.compile(r"^OMPI_pml (?P<pml>\w+)$"),
     "osu_p2p_memloc": re.compile(r"^# Send Buffer on \w+ \((?P<sloc>\w+)\) and Receive Buffer on \w+ \((?P<rloc>\w+)\)$"),
     "osu_p2p_type": re.compile(r"^# OSU MPI-CUDA (?P<type>[\w\s-]+) Test v\d+\.\d+$"),
+    "tuned_alg": re.compile(r"^tuned_alg: (?P<tuned_alg>\d+)$"),
     "ucc_en": re.compile(r"^ucc_enable: (?P<ucc_en>\d)$"),
     "ucc_tls": re.compile(r"^ucc_tls: (?P<ucc_tls>\w+)$"),
     "ucc_prio": re.compile(r"^ucc_prio: (?P<ucc_prio>\d+)$"),

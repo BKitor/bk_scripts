@@ -27,4 +27,5 @@ cat $IN_FILE >> /tmp/mdpdfdt.tmp
 # pandoc /tmp/mdpdfdt.tmp -f gfm -o $out_name.pdf --pdf-engine=wkhtmltopdf  --metadata pagetitle="$out_name" 
 # pandoc /tmp/mdpdfdt.tmp -f gfm -o $out_name.pdf --pdf-engine=pdflatex  --metadata pagetitle="$out_name" 
 pandoc /tmp/mdpdfdt.tmp -f markdown -o $OUT_FILE --pdf-engine=wkhtmltopdf --metadata pagetitle="$out_name" --katex=https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/
+# pandoc /tmp/mdpdfdt.tmp -f markdown_mmd -o $OUT_FILE --pdf-engine=wkhtmltopdf --metadata pagetitle="$out_name" --katex=https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/
 
