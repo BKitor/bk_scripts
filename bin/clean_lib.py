@@ -4,6 +4,7 @@ import logging
 
 GPD = {
     "alg": re.compile(r"^alg: (?P<alg>\d+)$"),
+    "bc_segsize": re.compile(r"^bc_segsize: (?P<bc_segsize>\d+)$"),
     "bkpap_alg": re.compile(r"^bkpap_alg: (?P<bkpap_alg>\d+)$"),
     "bkpap_prio": re.compile(r"^bkpap_prio: (?P<bkpap_prio>\d+)$"),
     "bkpap_seg_size": re.compile(r"^bkpap_seg_size: (?P<bkpap_seg_size>\d+)$"),

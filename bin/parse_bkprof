@@ -122,13 +122,22 @@ alg_exp_fmt_dict = {
                 "bkpap_bin_calc_tree",
                 "bkpap_bin_recv_child",
                 "bkpap_bin_send_parent",
-                "bkpap_bin_copy_bc_buf",
-                "bkpap_bin_scag",
-                "bkpap_bin_copy_out",
+                "bkpap_bin_inter_bcast",
                 "bkpap_bin_intra_bcast",
                 "bkpap_bin_end",
         ],
     },
+    "bk-chain":{
+        "root": "bkpap_chain_start",
+        "points": [
+            "bkpap_chain_intra_reduce",
+            "bkpap_chain_recv_child",
+            "bkpap_chain_send_parent",
+            "bkpap_chain_local_reduce",
+            "bkpap_chain_inter_bcast",
+            "bkpap_chain_intra_bcast",
+        ]
+    }
 }
 
 
