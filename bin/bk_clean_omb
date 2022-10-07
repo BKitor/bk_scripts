@@ -4,6 +4,9 @@ import logging
 import csv
 import sys
 
+import pprint
+pp = pprint.PrettyPrinter()
+
 '''
 TODO: Will silently fail if not all experiment identifiers (string passed in by `-p`) are matched 
       Should probably list which patterns are missing.
@@ -164,16 +167,71 @@ def parse_omb_style(file_name, exp_pattern_arr, line_pattern, num_folds=1, fold_
         print_omb_by_num(num_folds, exp_names, dat_dict)
 
 
+def parse_omb_no_patterns(file_name, dp_pattern, reset_pattern, num_folds=1):
+    exp_names = []
+    dat_dict = {}
+    exp_cnt = -1
+    with open(file_name) as f:
+        for line in f:
+            dp_m = dp_pattern.search(line)
+            reset_m = reset_pattern.search(line)
+            if dp_m:
+                if dp_m.group(1) not in dat_dict:
+                    dat_dict[dp_m.group(1)] = {}
+
+                dat_dict[dp_m.group(1)][str(exp_cnt)] = dp_m.group(2)
+                continue
+            if reset_m:
+                exp_cnt += 1
+                exp_names += str(exp_cnt)
+                continue
+
+    print_omb_by_num(num_folds, exp_names, dat_dict)
+
+
+def parse_omb_full(file_name, data_line_pattern):
+    k_list = list(dict(data_line_pattern.groupindex).keys())
+    # k_list.remove('msize')
+    out_l = []
+    with open(file_name) as f:
+        for line in f:
+            l_m = data_line_pattern.search(line)
+            if l_m:
+                out_l.append({k: l_m[k] for k in k_list})
+                if len(out_l) > 2 and out_l[-1]["msize"].isdigit() and out_l[-2]["msize"].isdigit():
+                    if int(out_l[-1]["msize"]) < int(out_l[-2]["msize"]):
+                        tmp = out_l.pop()
+                        out_l.append({k: "" for k in k_list})
+                        out_l.append(tmp)
+
+    w = csv.DictWriter(sys.stdout, k_list)
+    w.writeheader()
+    w.writerows(out_l)
+
+
 def main():
     args = clean_lib.parse_inputs()
 
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    pattern_list = clean_lib.get_patterns_from_str(args.pattern_lst) if args.pattern_lst else []
+    pattern_list = clean_lib.get_patterns_from_str(
+        args.pattern_lst) if args.pattern_lst else []
 
-    parse_omb_style(args.FILE, pattern_list, clean_lib.omb_pattern_run,
-                    num_folds=args.num_folds, fold_by=args.fold_by)
+    data_line_pattern = clean_lib.omb_patters["default"]
+    if args.omb_full:
+        data_line_pattern = clean_lib.omb_patters["full"]
+        parse_omb_full(args.FILE,
+                       data_line_pattern)
+        return
+
+    if pattern_list:
+        parse_omb_style(args.FILE, pattern_list, data_line_pattern,
+                        num_folds=args.num_folds, fold_by=args.fold_by)
+    else:
+        parse_omb_no_patterns(
+            args.FILE, data_line_pattern, clean_lib.omb_reset_pattern,
+            num_folds=args.num_folds)
 
 
 if __name__ == "__main__":
