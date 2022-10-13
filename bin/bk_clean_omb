@@ -8,12 +8,36 @@ import pprint
 pp = pprint.PrettyPrinter()
 
 '''
-TODO: Will silently fail if not all experiment identifiers (string passed in by `-p`) are matched 
-      Should probably list which patterns are missing.
+TODO: Will silently fail if not all experiment identifiers (string passed in
+by `-p`) are matched. Should probably list which patterns are missing.
 '''
 
 
-def parse_omb_style_file(file_name, exp_pattern_arr, line_pattern):
+def bk_chunk_list(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i+n]
+
+
+def get_exps_from_pattern_list(pattern_list):
+    return [list(i.groupindex.keys())[0] for i in pattern_list]
+
+
+def get_trials_from_parsed_data(parsed_data):
+    verify_parse_dict_integrity(parsed_data)
+    return [i for i in list(parsed_data.values())[0]]
+
+
+def verify_parse_dict_integrity(parse_dict):
+    exp_list = []
+    for i in parse_dict.values():
+        exp_list.append(list(i.keys()))
+    for i in exp_list:
+        if set(i) != set(exp_list[0]):
+            logging.error(
+                "exp_list set check failed, will continue with errors!!!")
+
+
+def parse_omb_style_default(file_name, exp_pattern_arr, line_pattern):
     '''
     return 2 elements
     exp_names -> array of experiment names
@@ -51,7 +75,7 @@ def parse_omb_style_file(file_name, exp_pattern_arr, line_pattern):
 
                 for gname, idx in g_idx.items():
                     logging.debug(f"matched identifier {gname}:{m.group(idx)}")
-                    exp_name += f"{gname}{m.group(idx)},"
+                    exp_name += f"{gname}{m.group(idx)}_"
 
                 if all(track_matches_arr) and exp_name not in exp_names:
                     logging.debug(f"adding {exp_name} to exp_names")
@@ -68,7 +92,7 @@ def parse_omb_style_file(file_name, exp_pattern_arr, line_pattern):
                 f"matched datapoint {m_dat.group(1)}:{m_dat.group(2)}")
             dat_dict[m_dat.group(1)][exp_name] = m_dat.group(2)
 
-    return exp_names, dat_dict
+    return dat_dict
 
 
 def print_exp_names_from_dat_dict(exp_names, dat_dict):
@@ -95,25 +119,16 @@ def print_exp_names_from_dat_dict(exp_names, dat_dict):
         csv_writer.writerow(tmp_dict)
 
 
-def print_omb_by_num(num_folds, exp_names, dat_dict):
-    num_tables = int(len(exp_names)/num_folds)
-
-    for i in range(num_tables):
-        fold_idx = i*num_folds
-        cur_exp_names = exp_names[fold_idx:fold_idx+num_folds]
-        print_exp_names_from_dat_dict(cur_exp_names, dat_dict)
-
-
 def print_omb_by_group(fold_by, exp_names, dat_dict):
     '''
-    This is hack that depends on fold_by being followed by , in expname
+    This is hack that depends on fold_by being followed by _ in expname
     This should work, unless I change the naming convention in parse_omb_style_file
     '''
     table_dict = {}
 
     for exp_name in exp_names:
         start_idx = exp_name.find(fold_by)
-        end_idx = exp_name.find(",", start_idx)
+        end_idx = exp_name.find("_", start_idx)
 
         if exp_name[start_idx:end_idx] not in table_dict:
             table_dict[exp_name[start_idx:end_idx]] = []
@@ -124,89 +139,106 @@ def print_omb_by_group(fold_by, exp_names, dat_dict):
         print_exp_names_from_dat_dict(exp_name_list, dat_dict)
 
 
-def parse_omb_style(file_name, exp_pattern_arr, line_pattern, num_folds=1, fold_by=""):
-    '''
-    exp_pattern_arr -> array of compiles re for parameter experiments, (bsize, nproc, SHArP on/off)
-        used to generate names for each experiment column
-    line_pattern -> line of measurement, i.e. the msize+time line in OMB (TODO: needs better explination)
-    '''
-    logging.info(f"parse_hvd_style, file:{file_name}")
-    logging.info(f"exp_pattern_arr: {exp_pattern_arr}")
-    logging.info(f"line_match: {line_pattern}")
+def print_omb_by_num(num_folds, data_dict, dat_dict_type):
+    trial_name_list = get_trials_from_parsed_data(data_dict)
 
-    group_names = []
-    for pattern in exp_pattern_arr:
-        group_names.extend(pattern.groupindex.keys())
-    logging.info(f"group_names: {group_names}")
-
-    if (len(set(group_names)) != len(group_names)):
-        logging.error(f"There are duplicates in group_names: {group_names}")
-        exit()
-
-    exp_names, dat_dict = parse_omb_style_file(
-        file_name, exp_pattern_arr, line_pattern)
-
-    logging.info(f"omb parse found experiment names {exp_names}")
-    # logging.info(f"omb parse return data dict {dat_dict}")
-
-    if fold_by:
-        if fold_by not in group_names:
-            logging.error(
-                f"Could not find fold-by group: {fold_by} in {group_names}")
-            exit()
-
-        if not all(map(lambda exp_name: fold_by in exp_name, exp_names)):
-            logging.error(
-                f"Could not find fold-by group: {fold_by} in {exp_names}")
-            exit()
-
-        logging.info(f'folding by group "{fold_by}"')
-        print_omb_by_group(fold_by, exp_names, dat_dict)
+    csv_header = ["msize"]
+    if dat_dict_type == "full":
+        csv_header.extend([f"num{i}avg" for i in range(num_folds)])
+        csv_header.extend([f"num{i}min" for i in range(num_folds)])
+        csv_header.extend([f"num{i}max" for i in range(num_folds)])
     else:
-        logging.info(f'folding by count {num_folds}')
-        print_omb_by_num(num_folds, exp_names, dat_dict)
+        csv_header.extend([f"foldnum{i}" for i in range(num_folds)])
+
+    csv_w = csv.writer(sys.stdout, csv_header)
+
+    for trials in bk_chunk_list(trial_name_list, num_folds):
+        if dat_dict_type == "full":
+            out_arr = ['msize']
+            out_arr.extend(f"{t}avg_lat" for t in trials)
+            out_arr.extend(f"{t}min_lat" for t in trials)
+            out_arr.extend(f"{t}max_lat" for t in trials)
+            csv_w.writerow(out_arr)
+            for msize in data_dict:
+                out_arr = [msize]
+                out_arr.extend(data_dict[msize][t]["avg_lat"] for t in trials)
+                out_arr.extend(data_dict[msize][t]["min_lat"] for t in trials)
+                out_arr.extend(data_dict[msize][t]["max_lat"] for t in trials)
+                csv_w.writerow(out_arr)
+        else:
+            out_arr = ['msize']
+            out_arr.extend(trials)
+            csv_w.writerow(out_arr)
+            for msize in data_dict:
+                out_arr = [msize]
+                out_arr.extend(data_dict[msize][t] for t in trials)
+                csv_w.writerow(out_arr)
 
 
-def parse_omb_no_patterns(file_name, dp_pattern, reset_pattern, num_folds=1):
-    exp_names = []
-    dat_dict = {}
-    exp_cnt = -1
-    with open(file_name) as f:
-        for line in f:
-            dp_m = dp_pattern.search(line)
-            reset_m = reset_pattern.search(line)
-            if dp_m:
-                if dp_m.group(1) not in dat_dict:
-                    dat_dict[dp_m.group(1)] = {}
+def print_omb_by_group_v2(fold_exp, pattern_list, data_dict, dat_dict_type="default"):
+    # valid types are "default" or "full"
+    exp_list = get_exps_from_pattern_list(pattern_list)
+    if fold_exp not in exp_list:
+        logging.error(f"-g {fold_exp} not in -p {exp_list}")
+        return
 
-                dat_dict[dp_m.group(1)][str(exp_cnt)] = dp_m.group(2)
-                continue
-            if reset_m:
-                exp_cnt += 1
-                exp_names += str(exp_cnt)
-                continue
+    group_dict = {}
 
-    print_omb_by_num(num_folds, exp_names, dat_dict)
+    trial_name_list = get_trials_from_parsed_data(data_dict)
+    for t in trial_name_list:
+        e_start = t.find(fold_exp)
+        e_end = t.find("_", e_start + len(fold_exp))
+        group_str = t[e_start:e_end]
+
+        if group_str not in group_dict:
+            group_dict[group_str] = {msize: {} for msize in data_dict}
+
+        for msize in data_dict:
+            group_dict[group_str][msize][t] = data_dict[msize][t]
+
+    for k in group_dict:
+        print_omb_by_num(len(group_dict[k]), group_dict[k], dat_dict_type)
 
 
-def parse_omb_full(file_name, data_line_pattern):
-    k_list = list(dict(data_line_pattern.groupindex).keys())
-    # k_list.remove('msize')
-    out_l = []
+def parse_omb_full(file_name, pattern_list, data_line_pattern):
+    # returns dict -> {'msize':{'exp_name':{"min", "max", "avg"}}}
+    exp_keys = get_exps_from_pattern_list(pattern_list)
+    cur_exp_dict = {i: "" for i in exp_keys}
+    ret_dict = {}
+
+    def _build_exp_str(_exp_dict):
+        _tmp_str = ""
+        for k in _exp_dict:
+            _tmp_str += f"{k}{_exp_dict[k]}_"
+        return _tmp_str
+
     with open(file_name) as f:
         for line in f:
             l_m = data_line_pattern.search(line)
-            if l_m:
-                out_l.append({k: l_m[k] for k in k_list})
-                if len(out_l) > 2 and out_l[-1]["msize"].isdigit() and out_l[-2]["msize"].isdigit():
-                    if int(out_l[-1]["msize"]) < int(out_l[-2]["msize"]):
-                        tmp = out_l.pop()
-                        out_l.append({k: "" for k in k_list})
-                        out_l.append(tmp)
+            exp_matches = map(lambda x: x.search(line), pattern_list)
 
-    w = csv.DictWriter(sys.stdout, k_list)
-    w.writeheader()
-    w.writerows(out_l)
+            if l_m:
+                cur_exp = _build_exp_str(cur_exp_dict)
+                msize = l_m["msize"]
+                if msize not in ret_dict:
+                    ret_dict[msize] = {}
+                if cur_exp not in ret_dict[msize]:
+                    ret_dict[msize][cur_exp] = {}
+
+                ret_dict[msize][cur_exp]["avg_lat"] = l_m["avg_lat"]
+                ret_dict[msize][cur_exp]["max_lat"] = l_m["max_lat"]
+                ret_dict[msize][cur_exp]["min_lat"] = l_m["min_lat"]
+                continue
+
+            for m in exp_matches:
+                if m is None:
+                    continue
+
+                m_gd = m.groupdict()
+                for k in m_gd:
+                    cur_exp_dict[k] = m_gd[k]
+
+    return ret_dict
 
 
 def main():
@@ -218,20 +250,24 @@ def main():
     pattern_list = clean_lib.get_patterns_from_str(
         args.pattern_lst) if args.pattern_lst else []
 
-    data_line_pattern = clean_lib.omb_patters["default"]
-    if args.omb_full:
-        data_line_pattern = clean_lib.omb_patters["full"]
-        parse_omb_full(args.FILE,
-                       data_line_pattern)
-        return
+    omb_output_type = "default" if not args.omb_full else "full"
+    data_line_pattern = clean_lib.omb_patters[omb_output_type]
 
-    if pattern_list:
-        parse_omb_style(args.FILE, pattern_list, data_line_pattern,
-                        num_folds=args.num_folds, fold_by=args.fold_by)
+    if args.omb_full:
+        file_parse_dict = parse_omb_full(args.FILE, pattern_list,
+                                         data_line_pattern)
     else:
-        parse_omb_no_patterns(
-            args.FILE, data_line_pattern, clean_lib.omb_reset_pattern,
-            num_folds=args.num_folds)
+        file_parse_dict = parse_omb_style_default(
+            args.FILE, pattern_list, data_line_pattern)
+
+    if args.group_by:
+        print_omb_by_group_v2(args.group_by, pattern_list,
+                              file_parse_dict, omb_output_type)
+    elif args.num_folds:
+        print_omb_by_num(args.num_folds,
+                         file_parse_dict, omb_output_type)
+
+    return
 
 
 if __name__ == "__main__":

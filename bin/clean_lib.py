@@ -2,6 +2,7 @@ import argparse
 import re
 import logging
 
+# Should only have 1 group per pattern, relied on in --omb_full
 GPD = {
     "alg": re.compile(r"^alg: (?P<alg>\d+)$"),
     "ar_segsize": re.compile(r"^ar_segsize: (?P<ar_segsize>\d+)$"),
@@ -22,7 +23,7 @@ GPD = {
     # "omb_pattern_run": re.compile(r"^(?P<msize>\d+)\s+(?P<time>\d+\.\d+)$"),
     "ompi_hcoll_en": re.compile(r"^OMPI_MCA_coll_hcoll_enable=(?P<hcoll>\d)$"),
     "ompi_pml": re.compile(r"^OMPI_pml (?P<pml>\w+)$"),
-    "osu_p2p_memloc": re.compile(r"^# Send Buffer on \w+ \((?P<sloc>\w+)\) and Receive Buffer on \w+ \((?P<rloc>\w+)\)$"),
+    # "osu_p2p_memloc": re.compile(r"^# Send Buffer on \w+ \((?P<sloc>\w+)\) and Receive Buffer on \w+ \((?P<rloc>\w+)\)$"),
     "osu_p2p_type": re.compile(r"^# OSU MPI-CUDA (?P<type>[\w\s-]+) Test v\d+\.\d+$"),
     "remap_alg": re.compile(r"^remap_alg: (?P<remap_alg>\d+)$"),
     "remap_disabled": re.compile(r"^remap_disabled: (?P<remap_disabled>\d+)$"),
@@ -90,7 +91,7 @@ def parse_inputs():
                         help="Enable DEBUG level logging")
     parser.add_argument("-n", "--num-folds", type=int, default=1,
                         help="How many experiments to fold into the output")
-    parser.add_argument("-g", "--fold-by", type=str,
+    parser.add_argument("-g", "--group-by", type=str,
                         help="Group tables by specified regex-group")
     parser.add_argument("-p", "--pattern-lst", type=str,
                         help="Comma sepperated list of features to match (eg: mif,ucc_prio,ppn,wsize)")
@@ -108,7 +109,7 @@ def parse_inputs():
             f"-n/--num-folds must be greater than 1, value given was {args.num_folds}")
         exit()
 
-    if args.num_folds != 1 and args.fold_by:
+    if args.num_folds != 1 and args.group_by:
         logging.error(
             "-n/--num-folds and -g/--group-by are incompatible, set one or the other")
         exit()
