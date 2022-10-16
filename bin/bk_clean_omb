@@ -119,50 +119,26 @@ def print_exp_names_from_dat_dict(exp_names, dat_dict):
         csv_writer.writerow(tmp_dict)
 
 
-def print_omb_by_group(fold_by, exp_names, dat_dict):
-    '''
-    This is hack that depends on fold_by being followed by _ in expname
-    This should work, unless I change the naming convention in parse_omb_style_file
-    '''
-    table_dict = {}
-
-    for exp_name in exp_names:
-        start_idx = exp_name.find(fold_by)
-        end_idx = exp_name.find("_", start_idx)
-
-        if exp_name[start_idx:end_idx] not in table_dict:
-            table_dict[exp_name[start_idx:end_idx]] = []
-
-        table_dict[exp_name[start_idx:end_idx]].append(exp_name)
-
-    for exp_name_list in table_dict.values():
-        print_exp_names_from_dat_dict(exp_name_list, dat_dict)
-
-
 def print_omb_by_num(num_folds, data_dict, dat_dict_type):
     trial_name_list = get_trials_from_parsed_data(data_dict)
 
-    csv_header = ["msize"]
-    if dat_dict_type == "full":
-        csv_header.extend([f"num{i}avg" for i in range(num_folds)])
-        csv_header.extend([f"num{i}min" for i in range(num_folds)])
-        csv_header.extend([f"num{i}max" for i in range(num_folds)])
-    else:
-        csv_header.extend([f"foldnum{i}" for i in range(num_folds)])
-
-    csv_w = csv.writer(sys.stdout, csv_header)
+    csv_w = csv.writer(sys.stdout) 
 
     for trials in bk_chunk_list(trial_name_list, num_folds):
         if dat_dict_type == "full":
             out_arr = ['msize']
             out_arr.extend(f"{t}avg_lat" for t in trials)
+            out_arr.append("")
             out_arr.extend(f"{t}min_lat" for t in trials)
+            out_arr.append("")
             out_arr.extend(f"{t}max_lat" for t in trials)
             csv_w.writerow(out_arr)
             for msize in data_dict:
                 out_arr = [msize]
                 out_arr.extend(data_dict[msize][t]["avg_lat"] for t in trials)
+                out_arr.append("")
                 out_arr.extend(data_dict[msize][t]["min_lat"] for t in trials)
+                out_arr.append("")
                 out_arr.extend(data_dict[msize][t]["max_lat"] for t in trials)
                 csv_w.writerow(out_arr)
         else:
@@ -197,7 +173,8 @@ def print_omb_by_group_v2(fold_exp, pattern_list, data_dict, dat_dict_type="defa
             group_dict[group_str][msize][t] = data_dict[msize][t]
 
     for k in group_dict:
-        print_omb_by_num(len(group_dict[k]), group_dict[k], dat_dict_type)
+        num_trials_in_group = len(group_dict[k][list(group_dict[k])[0]])
+        print_omb_by_num(num_trials_in_group, group_dict[k], dat_dict_type)
 
 
 def parse_omb_full(file_name, pattern_list, data_line_pattern):
@@ -260,14 +237,16 @@ def main():
         file_parse_dict = parse_omb_style_default(
             args.FILE, pattern_list, data_line_pattern)
 
+    if not file_parse_dict:
+        logging.error("file parse dict is empty, check if --omb_full is set")
+        return
+
     if args.group_by:
         print_omb_by_group_v2(args.group_by, pattern_list,
                               file_parse_dict, omb_output_type)
     elif args.num_folds:
         print_omb_by_num(args.num_folds,
                          file_parse_dict, omb_output_type)
-
-    return
 
 
 if __name__ == "__main__":
