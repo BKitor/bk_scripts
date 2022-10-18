@@ -1,0 +1,105 @@
+#!/usr/bin/python3
+import argparse
+import clean_lib
+import csv
+import glob
+import logging
+import os
+import statistics
+import sys
+
+import pprint
+pp = pprint.PrettyPrinter()
+
+cosmo_csv_header = ['epoch', 'loss', 'lr', 'mean_absolute_error',
+                    'time', 'val_loss', 'val_mean_absolute_error']
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("FILE")
+    return parser.parse_args()
+
+
+def parse_cosmo_dir(dir_name):
+    data_dict = {}
+    cfg_glb = glob.glob(f"{dir_name}/*")
+    for cfg_dir in cfg_glb:
+        cfg_bname = os.path.basename(cfg_dir)
+        cfg_bname = cfg_bname[:cfg_bname.find(".yaml")]
+        trial_glb = glob.glob(f"{cfg_dir}/*")
+
+        for trial in trial_glb:
+            trial_name = f"cfg{cfg_bname}_{os.path.basename(trial)}".replace(
+                '-', '_')
+            trial_history_csv = f"{trial}/history.csv"
+            try:
+                with open(trial_history_csv) as f:
+                    csv_r = csv.DictReader(f, cosmo_csv_header)
+                    next(csv_r)  # discard header
+                    time_lst = []
+                    for line in csv_r:
+                        time_lst.append(int(line["time"])/1e9)
+
+                    data_dict[trial_name] = {
+                        "avg_time": sum(time_lst)/len(time_lst),
+                        "max_time": max(time_lst),
+                        "min_time": min(time_lst),
+                        "stddev_time": statistics.stdev(time_lst),
+                    }
+            except OSError:
+                logging.error(
+                    f"caught OSError trying to read {trial_history_csv}")
+
+    return data_dict
+
+
+def print_dat_dict_by_group(dat_dict, group_name):
+    group_dict = {}
+    for k in dat_dict:
+        s_idx = k.find(group_name)
+        if s_idx < 0:
+            logging.error(f"-g '{group_name}' not found in trial {k}")
+            continue
+
+        e_idx = k.find("_", s_idx + len(group_name))
+        group_str = k[s_idx:e_idx]
+
+        if group_str not in group_dict:
+            group_dict[group_str] = {}
+
+        group_dict[group_str][k] = dat_dict[k]
+
+    for g in group_dict:
+        print_dat_dict_by_fold(group_dict[g], len(group_dict[g]))
+
+
+def print_dat_dict_by_fold(dat_dict, num_folds):
+    metric_lst = list(dat_dict[list(dat_dict.keys())[0]].keys())
+
+    csv_w = csv.writer(sys.stdout)
+    for trials in clean_lib.chunk_list(list(dat_dict.keys()), num_folds):
+        out_arr = ["metric"]
+        out_arr.extend(t for t in trials)
+        csv_w.writerow(out_arr)
+
+        for td in metric_lst:
+            out_arr = [td]
+            out_arr.extend(dat_dict[t][td] for t in trials)
+            csv_w.writerow(out_arr)
+        csv_w.writerow(["" for _ in range(len(metric_lst)+1)])
+
+
+def main():
+    args = clean_lib.parse_inputs()
+
+    file_data_dict = parse_cosmo_dir(args.FILE)
+
+    if args.group_by:
+        print_dat_dict_by_group(file_data_dict, args.group_by)
+    else:
+        print_dat_dict_by_fold(file_data_dict, args.num_folds)
+
+
+if __name__ == "__main__":
+    main()

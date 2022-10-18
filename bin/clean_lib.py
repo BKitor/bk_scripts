@@ -59,7 +59,6 @@ def get_patterns_from_str(pat_str):
             exit()
         ret_arr.append(GPD[p])
 
-    # logging.info(ret_arr)
     return ret_arr
 
 
