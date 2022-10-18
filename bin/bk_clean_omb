@@ -13,15 +13,6 @@ by `-p`) are matched. Should probably list which patterns are missing.
 '''
 
 
-def bk_chunk_list(lst, n):
-    for i in range(0, len(lst), n):
-        yield lst[i:i+n]
-
-
-def get_exps_from_pattern_list(pattern_list):
-    return [list(i.groupindex.keys())[0] for i in pattern_list]
-
-
 def get_trials_from_parsed_data(parsed_data):
     verify_parse_dict_integrity(parsed_data)
     return [i for i in list(parsed_data.values())[0]]
@@ -95,6 +86,41 @@ def parse_omb_style_default(file_name, exp_pattern_arr, line_pattern):
     return dat_dict
 
 
+def parse_omb_full(file_name, pattern_list, data_line_pattern):
+    # returns dict -> {'msize':{'exp_name':{"min", "max", "avg"}}}
+    exp_keys = clean_lib.get_exps_from_pattern_list(pattern_list)
+    cur_exp_dict = {i: "" for i in exp_keys}
+    ret_dict = {}
+
+    with open(file_name) as f:
+        for line in f:
+            l_m = data_line_pattern.search(line)
+            exp_matches = map(lambda x: x.search(line), pattern_list)
+
+            if l_m:
+                cur_exp = clean_lib.build_exp_str(cur_exp_dict)
+                msize = l_m["msize"]
+                if msize not in ret_dict:
+                    ret_dict[msize] = {}
+                if cur_exp not in ret_dict[msize]:
+                    ret_dict[msize][cur_exp] = {}
+
+                ret_dict[msize][cur_exp]["avg_lat"] = l_m["avg_lat"]
+                ret_dict[msize][cur_exp]["max_lat"] = l_m["max_lat"]
+                ret_dict[msize][cur_exp]["min_lat"] = l_m["min_lat"]
+                continue
+
+            for m in exp_matches:
+                if m is None:
+                    continue
+
+                m_gd = m.groupdict()
+                for k in m_gd:
+                    cur_exp_dict[k] = m_gd[k]
+
+    return ret_dict
+
+
 def print_exp_names_from_dat_dict(exp_names, dat_dict):
     # might want to cache this somewhere so that i'm not constatnly recalculating
     # point towards making this more class-based
@@ -122,9 +148,9 @@ def print_exp_names_from_dat_dict(exp_names, dat_dict):
 def print_omb_by_num(num_folds, data_dict, dat_dict_type):
     trial_name_list = get_trials_from_parsed_data(data_dict)
 
-    csv_w = csv.writer(sys.stdout) 
+    csv_w = csv.writer(sys.stdout)
 
-    for trials in bk_chunk_list(trial_name_list, num_folds):
+    for trials in clean_lib.chunk_list(trial_name_list, num_folds):
         if dat_dict_type == "full":
             out_arr = ['msize']
             out_arr.extend(f"{t}avg_lat" for t in trials)
@@ -151,19 +177,19 @@ def print_omb_by_num(num_folds, data_dict, dat_dict_type):
                 csv_w.writerow(out_arr)
 
 
-def print_omb_by_group_v2(fold_exp, pattern_list, data_dict, dat_dict_type="default"):
+def print_omb_by_group(group_id, pattern_list, data_dict, dat_dict_type="default"):
     # valid types are "default" or "full"
-    exp_list = get_exps_from_pattern_list(pattern_list)
-    if fold_exp not in exp_list:
-        logging.error(f"-g {fold_exp} not in -p {exp_list}")
+    exp_list = clean_lib.get_exps_from_pattern_list(pattern_list)
+    if group_id not in exp_list:
+        logging.error(f"-g {group_id} not in -p {exp_list}")
         return
 
     group_dict = {}
 
     trial_name_list = get_trials_from_parsed_data(data_dict)
     for t in trial_name_list:
-        e_start = t.find(fold_exp)
-        e_end = t.find("_", e_start + len(fold_exp))
+        e_start = t.find(group_id)
+        e_end = t.find("_", e_start + len(group_id))
         group_str = t[e_start:e_end]
 
         if group_str not in group_dict:
@@ -175,47 +201,6 @@ def print_omb_by_group_v2(fold_exp, pattern_list, data_dict, dat_dict_type="defa
     for k in group_dict:
         num_trials_in_group = len(group_dict[k][list(group_dict[k])[0]])
         print_omb_by_num(num_trials_in_group, group_dict[k], dat_dict_type)
-
-
-def parse_omb_full(file_name, pattern_list, data_line_pattern):
-    # returns dict -> {'msize':{'exp_name':{"min", "max", "avg"}}}
-    exp_keys = get_exps_from_pattern_list(pattern_list)
-    cur_exp_dict = {i: "" for i in exp_keys}
-    ret_dict = {}
-
-    def _build_exp_str(_exp_dict):
-        _tmp_str = ""
-        for k in _exp_dict:
-            _tmp_str += f"{k}{_exp_dict[k]}_"
-        return _tmp_str
-
-    with open(file_name) as f:
-        for line in f:
-            l_m = data_line_pattern.search(line)
-            exp_matches = map(lambda x: x.search(line), pattern_list)
-
-            if l_m:
-                cur_exp = _build_exp_str(cur_exp_dict)
-                msize = l_m["msize"]
-                if msize not in ret_dict:
-                    ret_dict[msize] = {}
-                if cur_exp not in ret_dict[msize]:
-                    ret_dict[msize][cur_exp] = {}
-
-                ret_dict[msize][cur_exp]["avg_lat"] = l_m["avg_lat"]
-                ret_dict[msize][cur_exp]["max_lat"] = l_m["max_lat"]
-                ret_dict[msize][cur_exp]["min_lat"] = l_m["min_lat"]
-                continue
-
-            for m in exp_matches:
-                if m is None:
-                    continue
-
-                m_gd = m.groupdict()
-                for k in m_gd:
-                    cur_exp_dict[k] = m_gd[k]
-
-    return ret_dict
 
 
 def main():
@@ -242,8 +227,8 @@ def main():
         return
 
     if args.group_by:
-        print_omb_by_group_v2(args.group_by, pattern_list,
-                              file_parse_dict, omb_output_type)
+        print_omb_by_group(args.group_by, pattern_list,
+                           file_parse_dict, omb_output_type)
     elif args.num_folds:
         print_omb_by_num(args.num_folds,
                          file_parse_dict, omb_output_type)

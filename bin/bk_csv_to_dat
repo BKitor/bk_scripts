@@ -1,0 +1,56 @@
+#!/usr/bin/python3
+import sys
+import os
+import csv
+import pprint
+import argparse
+
+pp = pprint.PrettyPrinter()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("files", type=str, nargs="+",
+                        help="input list of files", metavar="files")
+    parser.add_argument("--csv_out", action="store_true")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    out_headers = ["msize"]  # list of strings for header of out csv
+    # list of dicts for rows of out csv
+    out_dict = {f"{2**i}": {} for i in range(2, 29)}
+
+    for f_name in args.files:
+        b_name = os.path.basename(f_name)
+        name = os.path.splitext(b_name)[0]
+        with open(f_name) as f:
+            csv_r = csv.DictReader(f)
+            # line = next(csv_r)
+            # headers = list(line.keys())
+            # headers.remove("msize")
+            # headers = map(lambda x: f"{name},{x}", headers)
+            # out_headers.extend(headers)
+            for line in csv_r:
+                for k in line:
+                    if k == "msize":
+                        continue
+                    new_k = f"{name},{k}"
+                    out_dict[line['msize']][new_k] = line[k]
+
+    out_headers.extend(out_dict[list(out_dict.keys())[0]].keys())
+    out_list = []
+    for k in out_dict:
+        out_dict[k]["msize"] = k
+        out_list.append(out_dict[k])
+
+    csv_dialect = "excel" if args.csv_out else 'excel-tab'
+    csv_w = csv.DictWriter(sys.stdout, fieldnames=out_headers, dialect=csv_dialect)
+    csv_w.writeheader()
+    csv_w.writerows(out_list)
+
+
+if __name__ == "__main__":
+    main()

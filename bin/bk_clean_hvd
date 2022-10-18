@@ -1,7 +1,11 @@
+#!/usr/bin/python3
 import clean_lib
 import logging
 import csv
 import sys
+
+import pprint
+pp = pprint.PrettyPrinter()
 
 
 # TODO: Add fold-by functionality here
@@ -59,6 +63,72 @@ def parse_hvd_style(file_name, folds, pattern_arr):
                 conut_match_sets = 0
 
 
+def parse_hvd_file(file_name, pattern_list, data_pattern):
+    exp_keys = clean_lib.get_exps_from_pattern_list(pattern_list)
+    cur_exp_dict = {k: "uninitalized" for k in exp_keys}
+
+    dat_dict = {}
+
+    with open(file_name) as f:
+        for line in f:
+            exp_matches = map(lambda x: x.search(line), pattern_list)
+            m_dat = data_pattern.search(line)
+
+            if m_dat:
+                exp_str = clean_lib.build_exp_str(cur_exp_dict)
+                dat_dict[exp_str] = {
+                    "avg_perf": m_dat["avg_perf"],
+                    "avg_perf_err": m_dat["avg_perf_err"]
+                }
+
+            for m in exp_matches:
+                if m is None:
+                    continue
+
+                m_gd = m.groupdict()
+                for k in m_gd:
+                    cur_exp_dict[k] = m_gd[k]
+
+    return dat_dict
+
+
+def print_data_dict_by_fold(data_dict, num_folds):
+    csv_w = csv.writer(sys.stdout)
+    for trials in clean_lib.chunk_list(list(data_dict.keys()), num_folds):
+        out_headers = [f"{t}_avg" for t in trials]
+        out_headers.extend(f"{t}_err" for t in trials)
+        out_list = [data_dict[t]["avg_perf"] for t in trials]
+        out_list.extend(data_dict[t]["avg_perf_err"] for t in trials)
+        csv_w.writerow(out_headers)
+        csv_w.writerow(out_list)
+        csv_w.writerow(["" for _ in range(num_folds*2)])
+
+
+def print_data_dict_by_group(data_dict, group_id):
+    group_dict = {}
+
+    for t in data_dict:
+        e_start = t.find(group_id)
+        e_end = t.find("_", e_start + len(group_id))
+        group_str = t[e_start:e_end]
+
+        if group_str not in group_dict:
+            group_dict[group_str] = []
+
+        group_dict[group_str].append(t)
+
+    csv_w = csv.writer(sys.stdout)
+    for g in group_dict:
+        trials = group_dict[g]
+        out_headers = [f"{t}_avg" for t in trials]
+        out_headers.extend(f"{t}_err" for t in trials)
+        out_list = [data_dict[t]["avg_perf"] for t in trials]
+        out_list.extend(data_dict[t]["avg_perf_err"] for t in trials)
+        csv_w.writerow(out_headers)
+        csv_w.writerow(out_list)
+        csv_w.writerow(["" for _ in range(len(trials))])
+
+
 def main():
     args = clean_lib.parse_inputs()
 
@@ -67,18 +137,19 @@ def main():
 
     pattern_list = clean_lib.hvd_pattern_base.copy()
 
-    if args.cpu:
-        pattern_list.insert(2, clean_lib.hvd_pattern_cpu)
-    elif args.gpu:
-        pattern_list.insert(2, clean_lib.hvd_pattern_gpu)
-    else:
-        logging.warning("no --cpu/--gpu specified")
+    data_line_pattern = clean_lib.hvd_patters["default"]
 
     if args.pattern_lst:
         pattern_list.extend(
             clean_lib.get_patterns_from_str(args.pattern_lst))
 
-    parse_hvd_style(args.FILE, args.num_folds, pattern_list)
+    file_parse_dict = parse_hvd_file(
+        args.FILE, pattern_list, data_line_pattern)
+
+    if args.group_by:
+        print_data_dict_by_group(file_parse_dict, args.group_by)
+    else:
+        print_data_dict_by_fold(file_parse_dict, args.num_folds)
 
 
 if __name__ == "__main__":
