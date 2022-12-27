@@ -10,3 +10,5 @@ else
 fi	
 
 echo "PATH=\"$PWD/bin:\$PATH" >> $OUT_FILE
+
+mkdir ~/.chk_bak
